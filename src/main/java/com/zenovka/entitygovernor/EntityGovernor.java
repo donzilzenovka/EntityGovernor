@@ -69,7 +69,7 @@ public class EntityGovernor {
         return stack == null ? 0 : Math.max(0, stack.stackSize);
     }
 
-    private static final class MergeTicker {
+    public static final class MergeTicker {
         @SubscribeEvent
         public void onServerTick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END || activeMerge == null) return;
