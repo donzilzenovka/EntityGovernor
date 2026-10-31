@@ -1,6 +1,9 @@
 package com.zenovka.entitygovernor;
 
 import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
@@ -36,6 +39,83 @@ public class EntityGovernor {
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new CensusCommand());
+        FMLCommonHandler.instance().bus().register(new MergeTicker());
+    }
+
+    private static MergeJob activeMerge;
+
+    private static final class MergeJob {
+        final WorldServer world;
+        final ICommandSender sender;
+        final List<EntityItem> original;
+        final long originalQuantity;
+        int cursor;
+        int successful;
+        int candidates;
+        int incompatible;
+        int removedByMerge;
+        MergeJob(WorldServer world, ICommandSender sender, List<EntityItem> original) {
+            this.world = world;
+            this.sender = sender;
+            this.original = original;
+            long quantity = 0;
+            for (EntityItem item : original) quantity += stackQuantity(item);
+            this.originalQuantity = quantity;
+        }
+    }
+
+    private static long stackQuantity(EntityItem item) {
+        ItemStack stack = item.getEntityItem();
+        return stack == null ? 0 : Math.max(0, stack.stackSize);
+    }
+
+    private static final class MergeTicker {
+        @SubscribeEvent
+        public void onServerTick(TickEvent.ServerTickEvent event) {
+            if (event.phase != TickEvent.Phase.END || activeMerge == null) return;
+            MergeJob job = activeMerge;
+            // Each pass is bounded, even when thousands of dropped items are loaded.
+            int budget = 32;
+            while (budget-- > 0 && job.cursor < job.original.size()) {
+                EntityItem source = job.original.get(job.cursor++);
+                if (source.isDead) continue;
+                AxisAlignedBB box = source.boundingBox.expand(0.5, 0.5, 0.5);
+                List neighbors = job.world.getEntitiesWithinAABB(EntityItem.class, box);
+                for (Object candidate : neighbors) {
+                    EntityItem target = (EntityItem) candidate;
+                    if (target == source || target.isDead || source.isDead) continue;
+                    job.candidates++;
+                    boolean sourceWasAlive = !source.isDead;
+                    boolean targetWasAlive = !target.isDead;
+                    if (source.combineItems(target)) {
+                        job.successful++;
+                        if (sourceWasAlive && source.isDead) job.removedByMerge++;
+                        if (targetWasAlive && target.isDead) job.removedByMerge++;
+                    } else {
+                        job.incompatible++;
+                    }
+                }
+            }
+            if (job.cursor >= job.original.size()) {
+                int survivors = 0;
+                long finalQuantity = 0;
+                for (EntityItem item : job.original) {
+                    if (!item.isDead) {
+                        survivors++;
+                        finalQuantity += stackQuantity(item);
+                    }
+                }
+                job.sender.addChatMessage(new ChatComponentText("[EntityGovernor] Merge all complete, dimension "
+                        + job.world.provider.dimensionId + ": original entities " + job.original.size()
+                        + ", surviving original entities " + survivors
+                        + ", removed by merges " + job.removedByMerge
+                        + ", successful merges " + job.successful
+                        + ", incompatible attempts " + job.incompatible
+                        + ", items in original set " + job.originalQuantity + " -> " + finalQuantity
+                        + ". Natural despawns/pickups or transfers to new entities may affect totals."));
+                activeMerge = null;
+            }
+        }
     }
 
     private static final class Entry {
@@ -62,7 +142,7 @@ public class EntityGovernor {
     public static class CensusCommand extends CommandBase {
         @Override public String getCommandName() { return "eg"; }
         @Override public String getCommandUsage(ICommandSender sender) {
-            return "/eg census [export] [all|dimensionId] [top N] | /eg merge [radius]";
+            return "/eg census [export] [all|dimensionId] [top N] | /eg merge [radius|all]";
         }
         @Override public int getRequiredPermissionLevel() { return 2; }
 
@@ -71,6 +151,25 @@ public class EntityGovernor {
         }
 
         private void mergeNearby(ICommandSender sender, String[] args) {
+            if (args.length == 2 && "all".equalsIgnoreCase(args[1])) {
+                if (activeMerge != null) {
+                    reply(sender, "A merge job is already running.");
+                    return;
+                }
+                if (!(sender.getEntityWorld() instanceof WorldServer)) {
+                    reply(sender, "No server world available.");
+                    return;
+                }
+                WorldServer world = (WorldServer) sender.getEntityWorld();
+                List<EntityItem> items = new ArrayList<EntityItem>();
+                for (Object obj : world.loadedEntityList) {
+                    if (obj instanceof EntityItem && !((EntityItem) obj).isDead) items.add((EntityItem) obj);
+                }
+                activeMerge = new MergeJob(world, sender, items);
+                reply(sender, "Started merge all in dimension " + world.provider.dimensionId
+                        + " with " + items.size() + " dropped-item entities (32 processed per tick).");
+                return;
+            }
             if (!(sender instanceof EntityPlayer)) {
                 reply(sender, "This command requires a player position.");
                 return;
