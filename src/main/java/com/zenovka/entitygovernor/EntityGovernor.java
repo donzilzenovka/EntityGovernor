@@ -157,6 +157,26 @@ public class EntityGovernor {
                     entry.count++;
                     total++;
                 }
+                grandTotal += total;
+                List<Entry> sorted = new ArrayList<Entry>(counts.values());
+                Collections.sort(sorted, new Comparator<Entry>() {
+                    @Override public int compare(Entry a, Entry b) {
+                        int byCount = Integer.compare(b.count, a.count);
+                        if (byCount != 0) return byCount;
+                        int byName = a.name.compareTo(b.name);
+                        return byName != 0 ? byName : a.className.compareTo(b.className);
+                    }
+                });
+                String heading = "Dimension " + world.provider.dimensionId + ": " + total
+                        + " entities, " + sorted.size() + " types";
+                report.append(System.lineSeparator()).append(heading).append(System.lineSeparator());
+                if (!export) reply(sender, heading);
+                int limit = export ? sorted.size() : Math.min(top, sorted.size());
+                for (int i = 0; i < limit; i++) {
+                    Entry entry = sorted.get(i);
+                    String line = entry.count + "  " + entry.name + "  [" + entry.className + "]";
+                    report.append(line).append(System.lineSeparator());
+                    if (!export) sender.addChatMessage(new ChatComponentText("  " + entry.count + "  " + entry.name));
                 if (export) {
                     List<ItemEntry> sortedItems = new ArrayList<ItemEntry>(items.values());
                     Collections.sort(sortedItems, new Comparator<ItemEntry>() {
@@ -188,26 +208,6 @@ public class EntityGovernor {
                               .append(e.javaClass).append("]").append(System.lineSeparator());
                     }
                 }
-                grandTotal += total;
-                List<Entry> sorted = new ArrayList<Entry>(counts.values());
-                Collections.sort(sorted, new Comparator<Entry>() {
-                    @Override public int compare(Entry a, Entry b) {
-                        int byCount = Integer.compare(b.count, a.count);
-                        if (byCount != 0) return byCount;
-                        int byName = a.name.compareTo(b.name);
-                        return byName != 0 ? byName : a.className.compareTo(b.className);
-                    }
-                });
-                String heading = "Dimension " + world.provider.dimensionId + ": " + total
-                        + " entities, " + sorted.size() + " types";
-                report.append(System.lineSeparator()).append(heading).append(System.lineSeparator());
-                if (!export) reply(sender, heading);
-                int limit = export ? sorted.size() : Math.min(top, sorted.size());
-                for (int i = 0; i < limit; i++) {
-                    Entry entry = sorted.get(i);
-                    String line = entry.count + "  " + entry.name + "  [" + entry.className + "]";
-                    report.append(line).append(System.lineSeparator());
-                    if (!export) sender.addChatMessage(new ChatComponentText("  " + entry.count + "  " + entry.name));
                 }
             }
             if (!found) {
