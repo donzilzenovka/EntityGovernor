@@ -8,6 +8,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.item.EntityItem;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
@@ -30,7 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-@Mod(modid = "entitygovernor", name = "EntityGovernor", version = "0.1.2", acceptableRemoteVersions = "*")
+@Mod(modid = "entitygovernor", name = "EntityGovernor", version = "0.1.3", acceptableRemoteVersions = "*")
 public class EntityGovernor {
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
@@ -61,7 +62,7 @@ public class EntityGovernor {
     public static class CensusCommand extends CommandBase {
         @Override public String getCommandName() { return "eg"; }
         @Override public String getCommandUsage(ICommandSender sender) {
-            return "/eg census [export] [all|dimensionId] [top N]";
+            return "/eg census [export] [all|dimensionId] [top N] | /eg merge [radius]";
         }
         @Override public int getRequiredPermissionLevel() { return 2; }
 
@@ -69,7 +70,57 @@ public class EntityGovernor {
             sender.addChatMessage(new ChatComponentText("[EntityGovernor] " + message));
         }
 
+        private void mergeNearby(ICommandSender sender, String[] args) {
+            if (!(sender instanceof EntityPlayer)) {
+                reply(sender, "This command requires a player position.");
+                return;
+            }
+            double radius = 16.0;
+            if (args.length > 2) {
+                reply(sender, "Usage: /eg merge [radius] (1-32 blocks)");
+                return;
+            }
+            if (args.length == 2) {
+                try {
+                    radius = Double.parseDouble(args[1]);
+                } catch (NumberFormatException e) {
+                    reply(sender, "Invalid radius.");
+                    return;
+                }
+            }
+            if (Double.isNaN(radius) || Double.isInfinite(radius) || radius < 1 || radius > 32) {
+                reply(sender, "Radius must be between 1 and 32 blocks.");
+                return;
+            }
+            EntityPlayer player = (EntityPlayer) sender;
+            AxisAlignedBB area = player.boundingBox.expand(radius, radius, radius);
+            List nearby = player.worldObj.getEntitiesWithinAABB(EntityItem.class, area);
+            int checked = 0;
+            int merged = 0;
+            // Bound the amount of work done by one command invocation.
+            for (Object object : nearby) {
+                if (checked >= 256) break;
+                EntityItem source = (EntityItem) object;
+                if (source.isDead) continue;
+                checked++;
+                AxisAlignedBB mergeArea = source.boundingBox.expand(0.5, 0.5, 0.5);
+                List neighbors = player.worldObj.getEntitiesWithinAABB(EntityItem.class, mergeArea);
+                for (Object other : neighbors) {
+                    EntityItem target = (EntityItem) other;
+                    if (target == source || target.isDead || source.isDead) continue;
+                    if (source.combineItems(target)) merged++;
+                }
+            }
+            reply(sender, "Checked " + checked + " dropped-item entities; "
+                    + merged + " successful vanilla merges. "
+                    + (nearby.size() > 256 ? "More nearby items remain; run again." : ""));
+        }
+
         @Override public void processCommand(ICommandSender sender, String[] args) {
+            if (args.length > 0 && "merge".equalsIgnoreCase(args[0])) {
+                mergeNearby(sender, args);
+                return;
+            }
             if (args.length == 0 || !"census".equalsIgnoreCase(args[0])) {
                 reply(sender, getCommandUsage(sender));
                 return;
