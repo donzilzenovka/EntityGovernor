@@ -12,6 +12,10 @@ Operator commands:
 - `/eg census top 50` — current dimension, top 50 types
 - `/eg census 0 top 30` — Overworld, top 30 types
 - `/eg census all top 10` — each loaded dimension, top 10 types
+- `/eg census export` — write all entity types for the current dimension to a timestamped UTF-8 text file
+- `/eg census export all` — export all loaded dimensions to one report
+
+Exports are written to `logs/EntityGovernor/census-YYYYMMDD-HHmmss-SSS.txt` in the instance/server directory. Reports include registered IDs, Java class names, counts, and per-dimension totals. Players are labeled `Player` rather than `unregistered`. Exports always include all types; `top N` only limits chat output.
 
 Counts cover loaded entities, not mobs in unloaded chunks. Commands print to chat; large reports may be truncated by chat history.
 
