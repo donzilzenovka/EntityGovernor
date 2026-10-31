@@ -7,6 +7,9 @@ import net.minecraft.command.ICommandSender;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.item.EntityItem;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.world.WorldServer;
@@ -27,7 +30,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-@Mod(modid = "entitygovernor", name = "EntityGovernor", version = "0.1.1", acceptableRemoteVersions = "*")
+@Mod(modid = "entitygovernor", name = "EntityGovernor", version = "0.1.2", acceptableRemoteVersions = "*")
 public class EntityGovernor {
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
@@ -41,6 +44,17 @@ public class EntityGovernor {
         Entry(String name, String className) {
             this.name = name;
             this.className = className;
+        }
+    }
+
+    private static final class ItemEntry {
+        final String id;
+        final int metadata;
+        final String javaClass;
+        int entities;
+        long items;
+        ItemEntry(String id, int metadata, String javaClass) {
+            this.id = id; this.metadata = metadata; this.javaClass = javaClass;
         }
     }
 
@@ -104,9 +118,28 @@ public class EntityGovernor {
                 dimensions++;
                 Map<String, Entry> counts = new HashMap<String, Entry>();
                 int total = 0;
+                Map<String, ItemEntry> items = export ? new HashMap<String, ItemEntry>() : null;
                 for (Object object : world.loadedEntityList) {
                     if (!(object instanceof Entity)) continue;
                     Entity entity = (Entity) object;
+                    if (export && entity instanceof EntityItem) {
+                        ItemStack stack = ((EntityItem) entity).getEntityItem();
+                        if (stack != null && stack.getItem() != null) {
+                            Item item = stack.getItem();
+                            Object registered = Item.itemRegistry.getNameForObject(item);
+                            String id = registered == null ? "unregistered" : registered.toString();
+                            int metadata = stack.getItemDamage();
+                            String javaClass = item.getClass().getName();
+                            String key = id + ":" + metadata + ":" + javaClass;
+                            ItemEntry e = items.get(key);
+                            if (e == null) {
+                                e = new ItemEntry(id, metadata, javaClass);
+                                items.put(key, e);
+                            }
+                            e.entities++;
+                            e.items += stack.stackSize;
+                        }
+                    }
                     String name;
                     if (entity instanceof EntityPlayer) {
                         name = "Player";
@@ -123,6 +156,37 @@ public class EntityGovernor {
                     }
                     entry.count++;
                     total++;
+                }
+                if (export) {
+                    List<ItemEntry> sortedItems = new ArrayList<ItemEntry>(items.values());
+                    Collections.sort(sortedItems, new Comparator<ItemEntry>() {
+                        @Override public int compare(ItemEntry a, ItemEntry b) {
+                            int c = Integer.compare(b.entities, a.entities);
+                            if (c != 0) return c;
+                            c = a.id.compareTo(b.id);
+                            if (c != 0) return c;
+                            c = Integer.compare(a.metadata, b.metadata);
+                            return c != 0 ? c : a.javaClass.compareTo(b.javaClass);
+                        }
+                    });
+                    int droppedEntities = 0;
+                    long droppedQuantity = 0;
+                    for (ItemEntry e : sortedItems) {
+                        droppedEntities += e.entities;
+                        droppedQuantity += e.items;
+                    }
+                    report.append(System.lineSeparator()).append("Dropped items — dimension ")
+                          .append(world.provider.dimensionId).append(System.lineSeparator())
+                          .append(droppedEntities).append(" item entities, ")
+                          .append(droppedQuantity).append(" contained items, ")
+                          .append(sortedItems.size()).append(" variants").append(System.lineSeparator())
+                          .append("Entities  Quantity  Registry ID  Metadata  Java class")
+                          .append(System.lineSeparator());
+                    for (ItemEntry e : sortedItems) {
+                        report.append(e.entities).append("  ").append(e.items).append("  ")
+                              .append(e.id).append("  ").append(e.metadata).append("  [")
+                              .append(e.javaClass).append("]").append(System.lineSeparator());
+                    }
                 }
                 grandTotal += total;
                 List<Entry> sorted = new ArrayList<Entry>(counts.values());
