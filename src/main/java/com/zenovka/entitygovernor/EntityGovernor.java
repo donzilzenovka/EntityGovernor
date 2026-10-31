@@ -177,6 +177,7 @@ public class EntityGovernor {
                     String line = entry.count + "  " + entry.name + "  [" + entry.className + "]";
                     report.append(line).append(System.lineSeparator());
                     if (!export) sender.addChatMessage(new ChatComponentText("  " + entry.count + "  " + entry.name));
+                }
                 if (export) {
                     List<ItemEntry> sortedItems = new ArrayList<ItemEntry>(items.values());
                     Collections.sort(sortedItems, new Comparator<ItemEntry>() {
@@ -207,7 +208,6 @@ public class EntityGovernor {
                               .append(e.id).append("  ").append(e.metadata).append("  [")
                               .append(e.javaClass).append("]").append(System.lineSeparator());
                     }
-                }
                 }
             }
             if (!found) {
